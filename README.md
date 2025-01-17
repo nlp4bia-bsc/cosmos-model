@@ -42,7 +42,13 @@ folder_principal
 Install the library using pip:
 
 ```bash
-pip install cosmos_model
+pip install git+https://github.com/nlp4bia-bsc/cosmos-model.git
+```
+
+if you want a specific versión the library you can execute this line
+
+```bash
+pip install git+https://github.com/nlp4bia-bsc/cosmos-model.git@<TAG>
 ```
 
 ## Usage
