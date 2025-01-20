@@ -10,7 +10,11 @@ _global_cosmos_config: Dict = {}
 _global_ssh_client: Optional[SSHClient] = None
 
 
-def initialization(config_path: Optional[str] = None) -> None:
+def initialization(
+    config_path: Optional[str] = None,
+    host: Optional[str] = None,
+    remote_base_path: Optional[str] = None,
+) -> None:
     """
     Initializes the Cosmos system by performing the following steps:
 
@@ -25,6 +29,14 @@ def initialization(config_path: Optional[str] = None) -> None:
         The path to the `cosmos_config.yml` configuration file. If not provided,
         the function will look for the default configuration file in the current
         working directory.
+    host: Optional[str]
+        The host where the library will execute the job. This can be declarated
+        in the file of config_path and in case exists this will override the
+        declaration of the file
+    remote_base_path: Optional[str]
+        Path to remote folder in remote server to save all the execution details
+        of the Job. This can be declarated in the file of config_path and in case
+        exists this will override the declaration of the file
 
     Raises:
     -------
@@ -45,13 +57,19 @@ def initialization(config_path: Optional[str] = None) -> None:
     # 1. Load environment variables if a .env file exists.
     load_dotenv_if_exists()
 
-    # 2. Read the Cosmos configuration file.
+    # 2. Read the Cosmos configuration.
     cosmos_cfg = read_cosmos_config(config_path)
     _global_cosmos_config = cosmos_cfg
     print(
         "[cosmos.initialization] Configuration loaded from"
         f"{'./cosmos_config.yml' if not config_path else config_path}"
     )
+
+    if host:
+        _global_cosmos_config['host'] = host
+
+    if remote_base_path:
+        _global_cosmos_config['remote_base_path'] = remote_base_path
 
     # 3. Verify the SSH connection to the server.
     server_env = get_server_env_vars()

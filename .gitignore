@@ -1,3 +1,3 @@
 __pycache__/
-/cosmos.egg-info
+/*.egg-info
 .DS_Store
