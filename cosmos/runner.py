@@ -2,7 +2,6 @@
 
 import json
 import shutil
-import sys
 import tarfile
 import tempfile
 import time
@@ -397,6 +396,8 @@ def monitor_job(ssh_client: SSHClient, job_id: str, out_file: str, err_file: str
 
     start_time = datetime.now()
     last_printed_line = None
+    print()
+
     while True:
         current_time = datetime.now()
         # 1. Get squeue status
@@ -404,25 +405,18 @@ def monitor_job(ssh_client: SSHClient, job_id: str, out_file: str, err_file: str
         out_stat, _ = remote_command(ssh_client, squeue_cmd)
         job_state = out_stat.strip() if out_stat else "DONE"
 
-        previous_out_pos = last_out_pos
-        previous_err_pos = last_err_pos
-
         # 2. Tail of out_file
         last_out_pos = tail_file(ssh_client, out_file, last_out_pos, "out_file")
 
         # 3. Tail of err_file
         last_err_pos = tail_file(ssh_client, err_file, last_err_pos, "err_file")
 
-        if last_err_pos == previous_err_pos and last_out_pos == previous_out_pos:
-            print("\n")
-
         # 4. Printing the current status
         last_printed_line = (
             f"[job {job_id}][{str(datetime.now())}] Status: {job_state} "
-            f"- Time execution: {str(current_time - start_time)}\n"
+            f"- Time execution: {str(current_time - start_time)}"
         )
-        sys.stdout.write(last_printed_line)
-        sys.stdout.flush()
+        print(last_printed_line, end='\r')
 
         # 5. if job is not in squeue so it is finished
         if job_state in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"] or "DONE" in job_state:
@@ -430,7 +424,6 @@ def monitor_job(ssh_client: SSHClient, job_id: str, out_file: str, err_file: str
             break
 
         time.sleep(5)
-        sys.stdout.write("\033[1A\033[K")
 
 
 def cleanup_remote_folder(

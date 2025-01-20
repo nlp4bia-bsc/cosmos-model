@@ -10,7 +10,7 @@ def tail_file(
     ssh_client: paramiko.SSHClient,
     remote_path: str,
     last_position: int,
-    filename: Optional[str] = None
+    filename: Optional[str] = None,
 ) -> int:
     """
     Reads from a specific position to the end of a remote file.
@@ -48,8 +48,10 @@ def tail_file(
             f.seek(last_position)
             data = f.read().decode('utf-8')
             if data:
-                sys.stdout.write(f"[job.{filename}] {data}\n")
-                sys.stdout.flush()
+                print(" "*100, end='\r')
+                for line in data.split('\n'):
+                    sys.stdout.write(f"[job.{filename}] {line}\n")
+                    sys.stdout.flush()
             new_pos = f.tell()
         sftp.close()
         return new_pos
