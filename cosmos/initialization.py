@@ -61,7 +61,7 @@ def initialization(
     cosmos_cfg = read_cosmos_config(config_path)
     _global_cosmos_config = cosmos_cfg
     print(
-        "[cosmos.initialization] Configuration loaded from"
+        "[cosmos.initialization] Configuration loaded from "
         f"{'./cosmos_config.yml' if not config_path else config_path}"
     )
 
@@ -73,7 +73,7 @@ def initialization(
 
     # 3. Verify the SSH connection to the server.
     server_env = get_server_env_vars()
-    print("[cosmos.initialization] Creating SSH connection")
+    print(f"[cosmos.initialization] Creating SSH connection to {_global_cosmos_config['host']}")
     ssh_client = create_ssh_client(
         host=cosmos_cfg["host"],
         port=server_env["port"],
