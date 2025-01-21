@@ -18,9 +18,8 @@ def initialization(
     Initializes the Cosmos system by performing the following steps:
 
     1. Loads the environment variables if a .env file exists.
-    2. Reads the `cosmos_config.yml` configuration file from a specified or default location.
-    3. Verifies the SSH connection to the remote server using the provided credentials.
-    4. Checks and ensures the existence of the remote folder for job execution.
+    2. Verifies the SSH connection to the remote server using the provided credentials.
+    3. Checks and ensures the existence of the remote folder for job execution.
 
     Parameters:
     ----------
@@ -32,8 +31,6 @@ def initialization(
 
     Raises:
     -------
-    FileNotFoundError
-        If the `cosmos_config.yml` file does not exist.
     ConnectionError
         If the server is unavailable or the SSH connection fails.
     ValueError
@@ -74,10 +71,6 @@ def initialization(
 
     # 4. Verify or create the remote folder for job execution.
     remote_base_path = _global_cosmos_config.get("remote_base_path")
-    if not remote_base_path:
-        ssh_client.close()
-        raise ValueError("cosmos_config.yml is not defined 'remote_base_path'.")
-
     check_or_create_remote_path(ssh_client, remote_base_path)
 
     # Store the SSH client in a global variable for further use.

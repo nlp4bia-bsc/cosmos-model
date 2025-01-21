@@ -6,14 +6,7 @@ Cosmos Model Library is designed to facilitate the execution of Python scripts o
 
 To ensure the library works correctly, the following requirements must be met:
 
-1. **Configuration File**: A `cosmos_config.yml` file must be present in the project root. This file should include the following fields:
-
-   ```yaml
-   host: "<remote_server>"         # The server to connect to
-   remote_base_path: "<remote_path>"  # The base path for job execution on the remote server
-   ```
-
-2. **Environment Variables**: The virtual environment must include at least the following variables:
+1. **Environment Variables**: The virtual environment must include at least the following variables:
 
    - `COSMOS_SSH_USER`: The username for accessing the remote server.
    - `COSMOS_SSH_PASSWORD`: The password for accessing the remote server.
@@ -31,7 +24,6 @@ For the library to function correctly, the project should be organized as follow
 ```
 folder_principal
 |_ folder_with_python_script  # Must be a Python module (contains `__init__.py`)
-|_ cosmos_config.yml          # Configuration file
 |_ main.py (or a Jupyter notebook) # Script for initialization and running jobs
 ```
 
@@ -58,14 +50,15 @@ pip install git+https://github.com/nlp4bia-bsc/cosmos-model.git@<TAG>
 The `initialization` function sets up the global configuration and SSH connection. It must be called before running any jobs.
 
 **Parameters**:
-- `config_path` (optional, `str`): Path to the `cosmos_config.yml` file. If not provided, the default location is used.
+- `host` (`str`): Host to execute the job
+- `remote_base_path` (Optional, `str`): Path to save all job executed
 
 **Example**:
 
 ```python
 from cosmos import initialization
 
-initialization(config_path="./cosmos_config.yml")
+initialization(host="YOUR_HOST_HERE")
 ```
 
 ### Running a Job
@@ -149,18 +142,12 @@ print(f"Job status: {status}")
 
 Here is an example workflow:
 
-1. Create your `cosmos_config.yml` file:
-   ```yaml
-   host: "my_remote_server"
-   remote_base_path: "/remote/path/to/jobs"
-   ```
-
-2. Create your Python script (e.g., `main.py`):
+1. Create your Python script (e.g., `main.py`):
    ```python
    from cosmos import initialization, run, print_logs, check_status
 
    # Initialize the configuration and SSH connection
-   initialization()
+   initialization(host="<YOUR_HOST_HERE")
 
    # Run a job
    job_info = run(
