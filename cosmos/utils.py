@@ -1,6 +1,6 @@
 # utils.py
 import os
-import paramiko
+import paramiko  # type: ignore
 import sys
 
 from typing import Dict, List, Optional

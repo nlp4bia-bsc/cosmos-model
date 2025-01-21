@@ -8,7 +8,7 @@ import time
 import os
 
 from datetime import datetime
-from paramiko import SSHClient
+from paramiko import SSHClient  # type: ignore
 from typing import Any, Dict, List, Optional
 
 from cosmos.initialization import get_global_config, get_global_ssh_client

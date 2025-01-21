@@ -1,8 +1,8 @@
 # initialization.py
 from typing import Dict, Optional
-from paramiko import SSHClient
+from paramiko import SSHClient  # type: ignore
 
-from cosmos.config import get_server_env_vars, load_dotenv_if_exists, read_cosmos_config
+from cosmos.config import get_server_env_vars, load_dotenv_if_exists
 from cosmos.ssh_connection import check_server_availability, create_ssh_client, remote_command
 
 
@@ -11,9 +11,8 @@ _global_ssh_client: Optional[SSHClient] = None
 
 
 def initialization(
-    config_path: Optional[str] = None,
-    host: Optional[str] = None,
-    remote_base_path: Optional[str] = None,
+    host: str,
+    remote_base_path: Optional[str] = "/gpfs/projects/bsc14/executions",
 ) -> None:
     """
     Initializes the Cosmos system by performing the following steps:
@@ -25,18 +24,11 @@ def initialization(
 
     Parameters:
     ----------
-    config_path : Optional[str]
-        The path to the `cosmos_config.yml` configuration file. If not provided,
-        the function will look for the default configuration file in the current
-        working directory.
-    host: Optional[str]
-        The host where the library will execute the job. This can be declarated
-        in the file of config_path and in case exists this will override the
-        declaration of the file
-    remote_base_path: Optional[str]
+    host: str
+        The host where the library will execute the job.
+    remote_base_path: str
         Path to remote folder in remote server to save all the execution details
-        of the Job. This can be declarated in the file of config_path and in case
-        exists this will override the declaration of the file
+        of the Job.
 
     Raises:
     -------
@@ -58,13 +50,6 @@ def initialization(
     load_dotenv_if_exists()
 
     # 2. Read the Cosmos configuration.
-    cosmos_cfg = read_cosmos_config(config_path)
-    _global_cosmos_config = cosmos_cfg
-    print(
-        "[cosmos.initialization] Configuration loaded from "
-        f"{'./cosmos_config.yml' if not config_path else config_path}"
-    )
-
     if host:
         _global_cosmos_config['host'] = host
 
@@ -75,7 +60,7 @@ def initialization(
     server_env = get_server_env_vars()
     print(f"[cosmos.initialization] Creating SSH connection to {_global_cosmos_config['host']}")
     ssh_client = create_ssh_client(
-        host=cosmos_cfg["host"],
+        host=_global_cosmos_config["host"],
         port=server_env["port"],
         user=server_env["user"],
         password=server_env["password"],
@@ -88,7 +73,7 @@ def initialization(
         raise ConnectionError("Server not available or ping verification failed")
 
     # 4. Verify or create the remote folder for job execution.
-    remote_base_path = cosmos_cfg.get("remote_base_path")
+    remote_base_path = _global_cosmos_config.get("remote_base_path")
     if not remote_base_path:
         ssh_client.close()
         raise ValueError("cosmos_config.yml is not defined 'remote_base_path'.")
