@@ -2,7 +2,7 @@ from setuptools import setup, find_packages  # type: ignore
 
 setup(
     name="cosmos-model",
-    version="0.3.0",
+    version="0.4.0",
     description="Cosmos model library to execute function in HPC",
     author="Pablo Arancibia Barahona",
     packages=find_packages(),

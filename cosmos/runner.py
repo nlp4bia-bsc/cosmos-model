@@ -43,6 +43,7 @@ def run(
     outputs: Optional[List[str]] = [],
     force_install_requirements: bool = False,
     delete_files_after_execution: bool = True,
+    execute_with_slurm: bool = True,
 ) -> Dict[str, Any]:
     """
     Executes a function using a remote SLURM job scheduler on the server.
@@ -89,6 +90,8 @@ def run(
         Whether to force reinstall Python dependencies. Defaults to False.
     delete_files_after_execution : bool, optional
         Whether to delete temporary files after execution. Defaults to True.
+    execute_with_slurm : bool, optional
+        Whether to execute the job with slurm or not. Defaults to True.
 
     Returns:
     -------
@@ -180,51 +183,63 @@ def run(
     scp_file(ssh_client, local_slurm.name, remote_slurm_path)
 
     # 7. Execute the job
-    sbatch_cmd = f"cd {remote_job_dir} && sbatch {remote_slurm_path}"
-    out, err = remote_command(ssh_client, sbatch_cmd)
-    if err.strip() and "bsc/1.0" not in err:
-        print("[Error sbatch]:", err)
+    if execute_with_slurm:
+        sbatch_cmd = f"cd {remote_job_dir} && sbatch {remote_slurm_path}"
+        out, err = remote_command(ssh_client, sbatch_cmd)
+        if err.strip() and "bsc/1.0" not in err:
+            print("[Error sbatch]:", err)
 
-    init_out_sbatch = out.split('\n')[0]
-    print(f"[cosmos.run] Output remote logs: {out_file}")
-    print(f"[cosmos.run] Error remote logs: {err_file}")
-    print(f"[cosmos.run] {init_out_sbatch}")
+        init_out_sbatch = out.split('\n')[0]
+        print(f"[cosmos.run] Output remote logs: {out_file}")
+        print(f"[cosmos.run] Error remote logs: {err_file}")
+        print(f"[cosmos.run] {init_out_sbatch}")
 
-    # Parse job_id
-    job_id = None
-    for line in out.split("\n"):
-        if "Submitted batch job" in line:
-            job_id = line.strip().split()[-1]
+        # Parse job_id
+        job_id = None
+        for line in out.split("\n"):
+            if "Submitted batch job" in line:
+                job_id = line.strip().split()[-1]
 
-    if not job_id:
-        print("Job unknown. Check the output of sbatch.")
-        job_id = "unknown"
+        if not job_id:
+            print("Job unknown. Check the output of sbatch.")
+            job_id = "unknown"
 
-    print(f"[cosmos.run] Job {job_name} (ID: {job_id}) sent.")
+        print(f"[cosmos.run] Job {job_name} (ID: {job_id}) sent.")
 
-    shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-    job_info = {
-        "job_id": job_id,
-        "job_name": job_name,
-        "remote_job_dir": remote_job_dir,
-        "out_file": out_file,
-        "err_file": err_file,
-        "outputs": outputs,
-    }
+        job_info = {
+            "job_id": job_id,
+            "job_name": job_name,
+            "remote_job_dir": remote_job_dir,
+            "out_file": out_file,
+            "err_file": err_file,
+            "outputs": outputs,
+        }
 
-    if watch and job_id != "unknown":
-        try:
-            monitor_job(ssh_client, job_id, out_file, err_file)
-        except KeyboardInterrupt:
-            print("[cosmos.run] Interrupt from the user (Ctrl+C).")
-            print(f"[cosmos.run] Canceling job {job_id}")
-            cancel_job(job_info)
+        if watch and job_id != "unknown":
+            try:
+                monitor_job(ssh_client, job_id, out_file, err_file)
+            except KeyboardInterrupt:
+                print("[cosmos.run] Interrupt from the user (Ctrl+C).")
+                print(f"[cosmos.run] Canceling job {job_id}")
+                cancel_job(job_info)
 
-        if delete_files_after_execution:
-            cleanup_remote_folder(ssh_client, remote_job_dir, keep_paths=outputs)
+            if delete_files_after_execution:
+                cleanup_remote_folder(ssh_client, remote_job_dir, keep_paths=outputs)
 
-    return job_info
+        return job_info
+    else:
+        return _execute_directly_without_slurm(
+            ssh_client=ssh_client,
+            job_name=job_name,
+            remote_job_dir=remote_job_dir,
+            venv_path=venv_path,
+            final_command=final_command,
+            watch=watch,
+            delete_files_after_execution=delete_files_after_execution,
+            outputs=outputs,
+        )
 
 
 def cancel_job(job: Dict[str, str]) -> None:
@@ -627,3 +642,123 @@ fi
         print("[cosmos.run] All requirements already installed")
 
     print(f"[cosmos.run] Environment ready in {venv_path}. Requirements: {requirements}")
+
+
+def _execute_directly_without_slurm(
+    ssh_client: SSHClient,
+    job_name: str,
+    remote_job_dir: str,
+    venv_path: str,
+    final_command: str,
+    watch: bool,
+    delete_files_after_execution: bool,
+    outputs: List[str],
+) -> Dict[str, Any]:
+    """
+    Executes a job directly on a remote server without using SLURM.
+
+    This function runs a Python script or command directly on a remote server in a blocking mode.
+    The script is executed within a specified virtual environment, and its standard output and
+    error logs are redirected to files. Optionally, the logs can be displayed in real-time and
+    job-related files can be cleaned up after execution.
+
+    Parameters:
+    ----------
+    ssh_client : paramiko.SSHClient
+        An active SSH client connected to the remote server.
+    job_name : str
+        The name of the job being executed.
+    remote_job_dir : str
+        The remote directory where the job files are stored and the job is executed.
+    venv_path : str
+        The path to the virtual environment to activate before running the job.
+    final_command : str
+        The command to execute on the remote server.
+    watch : bool
+        Whether to display the output and error logs in real-time after execution.
+    delete_files_after_execution : bool
+        Whether to delete job-related files from the remote server after execution.
+    outputs : List[str]
+        A list of file paths to preserve during cleanup if `delete_files_after_execution` is True.
+
+    Returns:
+    -------
+    Dict[str, Any]
+        A dictionary containing job information, including:
+        - `job_id` (str): The ID of the job (always "direct_run" for direct execution).
+        - `job_name` (str): The name of the job.
+        - `remote_job_dir` (str): The remote directory where the job was executed.
+        - `out_file` (str): The path to the standard output log file.
+        - `err_file` (str): The path to the standard error log file.
+        - `outputs` (List[str]): The preserved output files.
+
+    Notes:
+    ------
+    - The command is executed in a blocking mode, meaning the function will wait until
+      the command completes before returning.
+    - Logs are redirected to `.out` and `.err` files in the `remote_job_dir`.
+    - If `watch` is True, the logs will be displayed in the console.
+    - If `delete_files_after_execution` is True, all files in the `remote_job_dir`
+      except those in `outputs` will be deleted.
+
+    Example:
+    --------
+    ```python
+    job_info = _execute_directly_without_slurm(
+        ssh_client=ssh_client,
+        job_name="test_job",
+        remote_job_dir="/remote/path",
+        venv_path="/remote/venv",
+        final_command="python script.py",
+        watch=True,
+        delete_files_after_execution=True,
+        outputs=["result.txt"]
+    )
+    ```
+    """
+
+    out_file = f"{remote_job_dir}/{job_name}.out"
+    err_file = f"{remote_job_dir}/{job_name}.err"
+
+    direct_cmd = (
+        f"cd {remote_job_dir} && "
+        f"source {venv_path}/bin/activate && "
+        f"{final_command} > {out_file} 2> {err_file}"
+    )
+
+    print("[cosmos.run] Running command in direct mode:")
+    print(f"[cosmos.run] {direct_cmd}")
+    print("[cosmos.run] This execution is blocking until the script ends")
+
+    out, err = remote_command(ssh_client, direct_cmd)
+    if err.strip() and "bsc/1.0" not in err:
+        print("[cosmos.run] Warnings or errors from direct execution:", err)
+
+    print("[cosmos.run] Direct execution finished")
+    print(f"[cosmos.run] Output remote logs: {out_file}")
+    print(f"[cosmos.run] Error remote logs: {err_file}")
+
+    if watch:
+        print("[cosmos.run] Showing logs from direct execution.\n")
+        out_text = read_remote_file(ssh_client, out_file)
+        err_text = read_remote_file(ssh_client, err_file)
+
+        if out_text:
+            print("=== STDOUT ===")
+            print(out_text)
+        if err_text:
+            print("=== STDERR ===")
+            print(err_text)
+
+    if delete_files_after_execution:
+        cleanup_remote_folder(ssh_client, remote_job_dir, keep_paths=outputs)
+
+    job_info = {
+        "job_id": "direct_run",
+        "job_name": job_name,
+        "remote_job_dir": remote_job_dir,
+        "out_file": out_file,
+        "err_file": err_file,
+        "outputs": outputs,
+    }
+    return job_info
