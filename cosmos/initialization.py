@@ -104,7 +104,7 @@ def check_or_create_remote_path(ssh_client: SSHClient, remote_path: str) -> None
     without raising an error if it already exists.
     """
     # Command to create the directory if it does not exist
-    cmd = f"mkdir -p {remote_path}"
+    cmd = f"mkdir -p {remote_path} && chmod -R 777 {remote_path}"
 
     # Execute the remote command and capture any error output
     _, err = remote_command(ssh_client, cmd)
