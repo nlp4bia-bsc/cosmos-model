@@ -11,6 +11,7 @@ from datetime import datetime
 from paramiko import SSHClient  # type: ignore
 from typing import Any, Dict, List, Optional
 
+from cosmos.execution_types import TRAINING_MODEL, DEFAULT_SCRIPT
 from cosmos.initialization import get_global_config, get_global_ssh_client
 from cosmos.slurm import create_slurm_script
 from cosmos.ssh_connection import remote_command, remote_command_stream, scp_file
@@ -44,6 +45,8 @@ def run(
     force_install_requirements: bool = False,
     delete_files_after_execution: bool = True,
     execute_with_slurm: bool = True,
+    execution_type: str = DEFAULT_SCRIPT,
+    training_logs_path: str = "",
 ) -> Dict[str, Any]:
     """
     Executes a function using a remote SLURM job scheduler on the server.
@@ -92,6 +95,11 @@ def run(
         Whether to delete temporary files after execution. Defaults to True.
     execute_with_slurm : bool, optional
         Whether to execute the job with slurm or not. Defaults to True.
+    execution_type : str
+        The type of execution, e.g. "training_model" or "default_script".
+    training_logs_path : str
+        If execution_type == "training_model" and this is not empty, the path on the remote server
+        that will be copied back locally after execution. Also automatically added to 'outputs'.
 
     Returns:
     -------
@@ -182,6 +190,15 @@ def run(
     remote_slurm_path = f"{remote_job_dir}/{job_name}.slurm"
     scp_file(ssh_client, local_slurm.name, remote_slurm_path)
 
+    if execution_type == TRAINING_MODEL and training_logs_path:
+        if training_logs_path not in outputs:
+            outputs.append(training_logs_path)
+
+    if execution_type == TRAINING_MODEL and training_logs_path:
+        local_logs_folder = os.path.join(os.getcwd(), "logs")
+        if not os.path.exists(local_logs_folder):
+            os.makedirs(local_logs_folder, exist_ok=True)
+
     # 7. Execute the job
     if execute_with_slurm:
         sbatch_cmd = f"cd {remote_job_dir} && sbatch {remote_slurm_path}"
@@ -228,6 +245,11 @@ def run(
             if delete_files_after_execution:
                 cleanup_remote_folder(ssh_client, remote_job_dir, keep_paths=outputs)
 
+        remote_source = f"{remote_job_dir}/{training_logs_path}"
+        local_dest = os.path.join(local_logs_folder, job_name)
+        print(f"[cosmos.run] Copying training logs from remote '{remote_source}' to '{local_dest}'")
+        _copy_folder_from_remote(ssh_client, remote_source, local_dest)
+
         return job_info
     else:
         return _execute_directly_without_slurm(
@@ -239,6 +261,9 @@ def run(
             watch=watch,
             delete_files_after_execution=delete_files_after_execution,
             outputs=outputs,
+            execution_type=execution_type,
+            training_logs_path=training_logs_path,
+            local_logs_folder=local_logs_folder,
         )
 
 
@@ -653,6 +678,9 @@ def _execute_directly_without_slurm(
     watch: bool,
     delete_files_after_execution: bool,
     outputs: List[str],
+    execution_type,  # TODO: add doctstring
+    training_logs_path,  # TODO: add doctstring
+    local_logs_folder,  # TODO: add doctstring
 ) -> Dict[str, Any]:
     """
     Executes a job directly on a remote server without using SLURM.
@@ -761,4 +789,113 @@ def _execute_directly_without_slurm(
         "err_file": err_file,
         "outputs": outputs,
     }
+
+    if execution_type == TRAINING_MODEL and training_logs_path:
+        remote_source = f"{remote_job_dir}/{training_logs_path}"
+        local_dest = os.path.join(local_logs_folder, job_name)
+        print(f"[cosmos.run] Copying training logs from remote '{remote_source}' to '{local_dest}'")
+        _copy_folder_from_remote(ssh_client, remote_source, local_dest)
+
     return job_info
+
+
+def _copy_folder_from_remote(ssh_client: SSHClient, remote_source: str, local_dest: str) -> None:
+    """
+    Copies a folder from a remote server to the local machine.
+
+    This function creates a tar archive on the remote server, transfers it to the local machine,
+    and then extracts it to the specified local destination. It also handles temporary file cleanup
+    both locally and on the remote server.
+
+    Parameters
+    ----------
+    ssh_client : paramiko.SSHClient
+        An active SSH client connected to the remote server.
+    remote_source : str
+        The directory or folder path on the remote server to be copied.
+    local_dest : str
+        The local directory where the folder should be extracted.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - Depends on two helper functions: `remote_command` for executing commands on the remote server
+      and `scp_remote_to_local` for transferring files to the local machine.
+    - A temporary tar file is created in `/tmp` on the remote server and then removed after
+      extraction.
+    - A temporary directory is created locally to store the tar file before extraction.
+
+    Example
+    -------
+    >>> import paramiko
+    >>> ssh = paramiko.SSHClient()
+    >>> ssh.load_system_host_keys()
+    >>> ssh.connect('remote.server.com', username='user', password='password')
+    >>> _copy_folder_from_remote(ssh, '/remote/path/folder', '/local/path/folder')
+    """
+    import os
+    import tempfile
+    import shutil
+
+    # 1. Create a tar file on the remote server
+    tar_remote_path = "/tmp/tmp_cosmos_logs.tar.gz"
+    cmd_tar = (
+        f"tar -czf {tar_remote_path} -C {os.path.dirname(remote_source)}"
+        f" {os.path.basename(remote_source)}"
+    )
+    out, err = remote_command(ssh_client, cmd_tar)
+    if err.strip():
+        print("[_copy_folder_from_remote] Error al crear tar remoto:", err)
+
+    # 2. Transfer (SCP) the tar file to the local machine
+    local_tmpdir = tempfile.mkdtemp()
+    local_tar = os.path.join(local_tmpdir, "logs.tar.gz")
+    scp_remote_to_local(ssh_client, tar_remote_path, local_tar)
+
+    # 3. Extract the tar file in the specified local destination
+    if not os.path.exists(local_dest):
+        os.makedirs(local_dest, exist_ok=True)
+
+    import tarfile
+    with tarfile.open(local_tar, "r:gz") as tar:
+        tar.extractall(path=local_dest)
+
+    # 4. Clean up temporary files and remove the tar file from the remote server
+    shutil.rmtree(local_tmpdir, ignore_errors=True)
+    remote_command(ssh_client, f"rm -f {tar_remote_path}")
+
+
+def scp_remote_to_local(ssh_client: SSHClient, remote_path: str, local_path: str) -> None:
+    """
+    Transfers a file from a remote server to a local path.
+
+    This function uses an SFTP session (via Paramiko) to download a file
+    from the remote server to the specified local destination.
+
+    Parameters
+    ----------
+    ssh_client : paramiko.SSHClient
+        An active SSH client connected to the remote server.
+    remote_path : str
+        The path of the file on the remote server to be downloaded.
+    local_path : str
+        The local path where the file will be saved.
+
+    Returns
+    -------
+    None
+
+    Example
+    -------
+    >>> import paramiko
+    >>> ssh = paramiko.SSHClient()
+    >>> ssh.load_system_host_keys()
+    >>> ssh.connect('remote.server.com', username='user', password='password')
+    >>> scp_remote_to_local(ssh, '/remote/path/file.txt', '/local/path/file.txt')
+    """
+    sftp = ssh_client.open_sftp()
+    sftp.get(remote_path, local_path)
+    sftp.close()
