@@ -1,4 +1,4 @@
-# entry_script.py
+#!/usr/bin/env python
 
 import sys
 import json

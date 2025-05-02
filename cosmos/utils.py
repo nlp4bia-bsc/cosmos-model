@@ -46,7 +46,7 @@ def tail_file(
         sftp = ssh_client.open_sftp()
         with sftp.open(remote_path, 'r') as f:
             f.seek(last_position)
-            data = f.read().decode('utf-8')
+            data = f.read().decode('utf-8', errors='replace')
             if data:
                 print(" "*100, end='\r')
                 for line in data.split('\n'):

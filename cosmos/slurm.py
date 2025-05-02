@@ -9,14 +9,19 @@ def create_slurm_script(
     user: str,
     out_file: str,
     err_file: str,
+    tasks: int,
     cpus: int,
     partition: str,
     nodes: int,
     exec_line: str,
+    previous_lines=None,
     gpus: int = 0,
     job_exclusive: bool = False,
+    module_purge: Optional[bool] = False,
     modules: Optional[List[str]] = None,
     venv_path: Optional[str] = None,
+    singularity_path: Optional[str] = None,
+    time: str = "02:00:00",
 ) -> str:
     """
     Generates the content of a SLURM script using a predefined template.
@@ -67,13 +72,15 @@ def create_slurm_script(
     """
     template_content = load_template("slurm_template.sh")
 
+    module_purge_line = "module purge" if module_purge else ""
     module_lines = "\n".join([f"module load {m}" for m in modules]) if modules else ""
 
     gpu_line = f"#SBATCH --gres=gpu:{gpus}" if gpus > 0 else ""
     job_exclusive_line = "#SBATCH --exclusive" if job_exclusive else ""
 
-    # Venv logic
-    venv_line = f"source {venv_path}/bin/activate"
+    # Venv/Singularity logic
+    singularity_lines = f"bsc_singularity exec --nv {singularity_path}" if singularity_path else ""
+    venv_line = f"source {venv_path}/bin/activate" if not singularity_path else ""
 
     script_filled = (
         template_content
@@ -83,6 +90,7 @@ def create_slurm_script(
         .replace("{{out_file}}", out_file)
         .replace("{{err_file}}", err_file)
         .replace("{{nodes}}", str(nodes))
+        .replace("{{tasks}}", str(tasks))
         .replace("{{cpus}}", str(cpus))
         .replace("{{gpu_line}}", gpu_line)
         .replace("{{job_exclusive_line}}", job_exclusive_line)
@@ -90,6 +98,10 @@ def create_slurm_script(
         .replace("{{module_lines}}", module_lines)
         .replace("{{venv_line}}", venv_line)
         .replace("{{exec_line}}", exec_line)
+        .replace("{{time}}", time)
+        .replace("{{module_purge_line}}", module_purge_line)
+        .replace("{{singularity_lines}}", singularity_lines)
+        .replace("{{previous_lines}}", previous_lines)
     )
 
     return script_filled

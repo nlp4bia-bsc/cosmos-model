@@ -33,6 +33,7 @@ def run(
     requirements: Optional[List[str]] = [],
     modules: Optional[List[str]] = [],
     partition: Optional[str] = None,
+    tasks: int = 4,
     nodes: int = 1,
     cpus: int = 1,
     gpus: int = 0,
@@ -47,6 +48,9 @@ def run(
     execute_with_slurm: bool = True,
     execution_type: str = DEFAULT_SCRIPT,
     training_logs_path: str = "",
+    time: str = "02:00:00",
+    module_purge: bool = False,
+    singularity_path: str = None
 ) -> Dict[str, Any]:
     """
     Executes a function using a remote SLURM job scheduler on the server.
@@ -150,11 +154,15 @@ def run(
         prepare_venv(ssh_client, venv_path, requirements, force_install_requirements)
 
     # 5. Build final command
-    args_json = json.dumps(args)
-    kwargs_json = json.dumps(kwargs)
+    args_json = json.dumps(args).replace('"', '\\"')
+    kwargs_json = json.dumps(kwargs).replace('"', '\\"')
+    *pre_commands, last_command = custom_command
+
+    previous_lines = "\n".join(pre_commands) if len(custom_command) > 1 else ""
+
     final_command = (
-        f"{custom_command} {remote_job_dir}/entry_script.py "
-        f"{module_path} {function_name} '{args_json}' '{kwargs_json}'"
+        f"{last_command} {remote_job_dir}/entry_script.py "
+        f'{module_path} {function_name} "{args_json}" "{kwargs_json}"'
     )
 
     # 6. SLURM file creation
@@ -169,6 +177,7 @@ def run(
         user=user,
         out_file=out_file,
         err_file=err_file,
+        tasks=tasks,
         cpus=cpus,
         gpus=gpus,
         job_exclusive=job_exclusive,
@@ -177,6 +186,10 @@ def run(
         nodes=nodes,
         exec_line=final_command,
         venv_path=venv_path,
+        module_purge=module_purge,
+        singularity_path=singularity_path,
+        time=time,
+        previous_lines=previous_lines,
     )
 
     local_slurm = tempfile.NamedTemporaryFile(suffix=".slurm", delete=False)
@@ -190,11 +203,12 @@ def run(
     remote_slurm_path = f"{remote_job_dir}/{job_name}.slurm"
     scp_file(ssh_client, local_slurm.name, remote_slurm_path)
 
-    if execution_type == TRAINING_MODEL and training_logs_path:
+    if execution_type == TRAINING_MODEL and training_logs_path != "":
         if training_logs_path not in outputs:
             outputs.append(training_logs_path)
 
-    if execution_type == TRAINING_MODEL and training_logs_path:
+    local_logs_folder = ""
+    if execution_type == TRAINING_MODEL and training_logs_path != "":
         local_logs_folder = os.path.join(os.getcwd(), "logs")
         if not os.path.exists(local_logs_folder):
             os.makedirs(local_logs_folder, exist_ok=True)
@@ -246,9 +260,13 @@ def run(
                 cleanup_remote_folder(ssh_client, remote_job_dir, keep_paths=outputs)
 
         remote_source = f"{remote_job_dir}/{training_logs_path}"
-        local_dest = os.path.join(local_logs_folder, job_name)
-        print(f"[cosmos.run] Copying training logs from remote '{remote_source}' to '{local_dest}'")
-        _copy_folder_from_remote(ssh_client, remote_source, local_dest)
+        if execution_type == TRAINING_MODEL and training_logs_path != "":
+            local_dest = os.path.join(local_logs_folder, job_name)
+            print(
+                "[cosmos.run] Copying training logs from remote "
+                f"'{remote_source}' to '{local_dest}'"
+            )
+            _copy_folder_from_remote(ssh_client, remote_source, local_dest)
 
         return job_info
     else:
@@ -847,8 +865,8 @@ def _copy_folder_from_remote(ssh_client: SSHClient, remote_source: str, local_de
         f" {os.path.basename(remote_source)}"
     )
     out, err = remote_command(ssh_client, cmd_tar)
-    if err.strip():
-        print("[_copy_folder_from_remote] Error al crear tar remoto:", err)
+    if err.strip() and "bsc/1.0" not in err:
+        print("[cosmos._copy_folder_from_remote] Error creating remote TAR:", err)
 
     # 2. Transfer (SCP) the tar file to the local machine
     local_tmpdir = tempfile.mkdtemp()

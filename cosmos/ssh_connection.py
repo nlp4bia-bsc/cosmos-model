@@ -122,6 +122,7 @@ def scp_file(ssh_client: paramiko.SSHClient, local_path: str, remote_path: str) 
     """
     with ssh_client.open_sftp() as sftp:
         sftp.put(local_path, remote_path)
+        remote_command(ssh_client, f"chmod -R 777 {remote_path}")
 
 
 def check_server_availability(ssh_client: paramiko.SSHClient) -> bool:
